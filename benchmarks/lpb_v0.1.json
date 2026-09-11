@@ -1,0 +1,73 @@
+{
+  "benchmark": "LLM Parkinsonism Benchmark",
+  "version": "0.1",
+  "scenarios": [
+    {
+      "name": "watchdog",
+      "goal": "Independently alert when disaster-recovery nodes A or B become unavailable.",
+      "acceptance_criteria": [
+        {"id": "R1", "description": "A unavailable produces A NODE DOWN ALERT.", "weight": 1.0},
+        {"id": "R2", "description": "B unavailable produces B NODE DOWN ALERT.", "weight": 1.0},
+        {"id": "R3", "description": "A and B unavailable leaves both node-level alerts observable.", "weight": 1.0},
+        {"id": "R4", "description": "Recovery restores the correct healthy state.", "weight": 1.0}
+      ],
+      "non_goals": ["SITE DOWN correlation", "suppression of individual node alerts", "cross-node inference"],
+      "action_token_mean": 900, "action_token_sd": 180, "required_complexity": 4.0, "success_probability": 0.9
+    },
+    {
+      "name": "api_release",
+      "goal": "Release a service API with health, authentication, and rollback verified.",
+      "acceptance_criteria": [
+        {"id": "R1", "description": "Health endpoint passes.", "weight": 1.0},
+        {"id": "R2", "description": "Authentication rejects invalid credentials and accepts valid credentials.", "weight": 1.0},
+        {"id": "R3", "description": "Rollback restores the previous stable release.", "weight": 1.0}
+      ],
+      "non_goals": ["new API gateway abstraction", "service mesh migration"],
+      "action_token_mean": 1100, "action_token_sd": 250, "required_complexity": 3.0, "success_probability": 0.9
+    },
+    {
+      "name": "database_migration",
+      "goal": "Migrate a schema without data loss and verify forward and rollback paths.",
+      "acceptance_criteria": [
+        {"id": "R1", "description": "Forward migration completes.", "weight": 1.0},
+        {"id": "R2", "description": "Record counts and checksums match expected values.", "weight": 1.0},
+        {"id": "R3", "description": "Rollback restores the pre-migration schema and data.", "weight": 1.0}
+      ],
+      "non_goals": ["ORM replacement", "unrelated index redesign"],
+      "action_token_mean": 1250, "action_token_sd": 280, "required_complexity": 3.0, "success_probability": 0.9
+    },
+    {
+      "name": "ci_pipeline",
+      "goal": "Create a CI pipeline that tests, builds, and publishes on the intended branch.",
+      "acceptance_criteria": [
+        {"id": "R1", "description": "Unit tests run and fail the pipeline on test failure.", "weight": 1.0},
+        {"id": "R2", "description": "Build artifact is reproducibly created.", "weight": 1.0},
+        {"id": "R3", "description": "Publish step runs only on the intended branch after tests pass.", "weight": 1.0}
+      ],
+      "non_goals": ["multi-cloud deployment", "repository-wide formatter migration"],
+      "action_token_mean": 850, "action_token_sd": 170, "required_complexity": 3.0, "success_probability": 0.9
+    },
+    {
+      "name": "backup_restore",
+      "goal": "Verify a backup can be created, integrity-checked, and restored.",
+      "acceptance_criteria": [
+        {"id": "R1", "description": "Backup artifact is created.", "weight": 1.0},
+        {"id": "R2", "description": "Integrity check passes.", "weight": 1.0},
+        {"id": "R3", "description": "Restore recreates the expected files and metadata.", "weight": 1.0}
+      ],
+      "non_goals": ["new archival tier", "cross-region replication redesign"],
+      "action_token_mean": 1000, "action_token_sd": 220, "required_complexity": 3.0, "success_probability": 0.9
+    },
+    {
+      "name": "research_pipeline",
+      "goal": "Produce a reproducible analysis with data validation, model run, and exported results.",
+      "acceptance_criteria": [
+        {"id": "R1", "description": "Input data validation passes.", "weight": 1.0},
+        {"id": "R2", "description": "Configured analysis completes reproducibly.", "weight": 1.0},
+        {"id": "R3", "description": "Primary metrics are exported with provenance.", "weight": 1.0}
+      ],
+      "non_goals": ["new model family", "dashboard redesign", "extra exploratory endpoints"],
+      "action_token_mean": 1050, "action_token_sd": 240, "required_complexity": 3.0, "success_probability": 0.9
+    }
+  ]
+}
