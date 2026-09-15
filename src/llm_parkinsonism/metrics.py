@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 from .models import GoalContract, TaskState
 
@@ -10,13 +10,15 @@ class EpisodeMetrics:
     success: float
     verified_utility: float
     total_tokens: int
-    useful_token_ratio: float
+    tokens_to_first_completion: float
+    direct_useful_token_ratio: float
+    process_useful_token_ratio: float
     token_efficiency: float
-    nonproductive_persistence_ratio: float
     termination_overrun_ratio: float
-    goal_drift_rate: float
-    complexity_accretion_index: float
-    llm_parkinsonism_index: float
+    precompletion_goal_drift_rate: float
+    gross_complexity_accretion_index: float
+    net_complexity_index: float
+    executive_persistence_index: float
     executed_actions: int
     rejected_actions: int
 
@@ -24,50 +26,54 @@ class EpisodeMetrics:
         return asdict(self)
 
 
-def compute_metrics(
-    state: TaskState,
-    contract: GoalContract,
-    required_complexity: float,
-) -> EpisodeMetrics:
-    verified_utility = state.completion_fraction(contract)
-    success = 1.0 if state.all_complete(contract) else 0.0
-    total_tokens = max(state.tokens, 1)
+def compute_metrics(state: TaskState, contract: GoalContract, required_complexity: float) -> EpisodeMetrics:
+    # Evaluation uses the simulator's external world-state oracle, not the controller's self-report.
+    verified_utility = state.world_completion_fraction(contract)
+    success = 1.0 if state.world_all_complete(contract) else 0.0
+    total_tokens_safe = max(state.tokens, 1)
 
-    useful_ratio = min(max(state.useful_tokens / total_tokens, 0.0), 1.0)
-    token_efficiency = 1000.0 * verified_utility / total_tokens
-    nonproductive = 1.0 - useful_ratio
+    direct_ratio = min(max(state.direct_useful_tokens / total_tokens_safe, 0.0), 1.0)
+    process_ratio = min(max(state.process_useful_tokens / total_tokens_safe, 0.0), 1.0)
+    token_efficiency = 1000.0 * verified_utility / total_tokens_safe
 
     if state.first_completion_tokens is None:
         termination_overrun = 0.0
+        tokens_to_completion = float("nan")
     else:
-        termination_overrun = max(total_tokens - state.first_completion_tokens, 0) / total_tokens
+        termination_overrun = max(state.tokens - state.first_completion_tokens, 0) / total_tokens_safe
+        tokens_to_completion = float(state.first_completion_tokens)
 
-    goal_drift = (
-        state.unscoped_executed_actions / state.executed_actions
-        if state.executed_actions
+    pre_gdr = (
+        state.precompletion_unscoped_actions / state.precompletion_executed_actions
+        if state.precompletion_executed_actions
         else 0.0
     )
-    complexity_accretion = max(state.complexity_added, 0.0) / max(required_complexity, 1e-9)
+    gross_cai = state.gross_complexity_added / max(required_complexity, 1e-9)
+    net_ci = max(state.net_complexity_delta, 0.0) / max(required_complexity, 1e-9)
 
-    lpi = 100.0 * (
-        0.35 * nonproductive
+    # Exploratory descriptive composite only; primary outcomes remain success and cost.
+    nonproductive = 1.0 - process_ratio
+    epi = 100.0 * (
+        0.40 * nonproductive
         + 0.30 * termination_overrun
-        + 0.20 * goal_drift
-        + 0.15 * min(complexity_accretion, 1.0)
+        + 0.20 * pre_gdr
+        + 0.10 * min(gross_cai, 1.0)
     )
-    lpi = min(max(lpi, 0.0), 100.0)
+    epi = min(max(epi, 0.0), 100.0)
 
     return EpisodeMetrics(
         success=success,
         verified_utility=verified_utility,
         total_tokens=state.tokens,
-        useful_token_ratio=useful_ratio,
+        tokens_to_first_completion=tokens_to_completion,
+        direct_useful_token_ratio=direct_ratio,
+        process_useful_token_ratio=process_ratio,
         token_efficiency=token_efficiency,
-        nonproductive_persistence_ratio=nonproductive,
         termination_overrun_ratio=termination_overrun,
-        goal_drift_rate=goal_drift,
-        complexity_accretion_index=complexity_accretion,
-        llm_parkinsonism_index=lpi,
+        precompletion_goal_drift_rate=pre_gdr,
+        gross_complexity_accretion_index=gross_cai,
+        net_complexity_index=net_ci,
+        executive_persistence_index=epi,
         executed_actions=state.executed_actions,
         rejected_actions=state.rejected_actions,
     )
