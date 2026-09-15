@@ -1,85 +1,73 @@
-# Prespecified Live-Model Evaluation Protocol
-
-This protocol is included to prevent the controlled synthetic results from being misrepresented as frontier-model measurements.
+# Prespecified Live-Model Evaluation Protocol for GEC v0.2
 
 ## Objective
 
-Test whether real tool-using LLM agents exhibit the four operational features of LLM Parkinsonism and whether GEC improves Token Efficiency without materially reducing task success.
-
-## Models
-
-Run at least three model families, including one frontier reasoning model and one lower-cost model. Record exact model IDs, dates, reasoning-effort settings, and provider API versions.
+Test whether project-level executive governance improves resource efficiency without degrading externally adjudicated hard-goal success in real tool-using LLMs.
 
 ## Conditions
 
-For each frozen task and random seed / environment instance:
+For each paired task instance use the same:
 
-1. **Local-loop baseline** — standard planner/executor; after each successful step, the orchestration asks for the next action until the model emits a terminal action or the hard safety cap fires.
-2. **Budget-only** — same baseline plus the same hard token budget used by GEC.
-3. **GEC** — same proposal model and tools, wrapped by the deterministic Global Executive Controller.
+- base model and model version;
+- temperature / reasoning-effort setting;
+- tool surface and permissions;
+- initial environment state;
+- Goal Contract and acceptance criteria;
+- context available at trial start.
 
-Do not change the base model, temperature, tool surface, or acceptance criteria between conditions.
+Compare baseline local-loop, budget-only, and GEC governance. Share common randomness and exogenous environment events where technically possible.
 
-## Tasks
+## Primary endpoints
 
-Use LPB v0.1 plus at least two real software tasks with deterministic tests. For the watchdog task, keep the non-goals explicit and do not reward SITE-level aggregation.
+1. **Externally adjudicated hard-goal success.** Prespecify superiority or non-inferiority hypotheses.
+2. **Tokens to first verified hard-goal completion** among paired successful trials.
 
-## Minimum sample
-
-- 30 independent trials per task x model x condition for pilot inference.
-- Prefer 100+ trials per cell for stable tail metrics.
-
-## Required logging
-
-For every model/tool call record:
-
-- input tokens;
-- output/reasoning tokens when exposed;
-- tool-call count;
-- wall time;
-- action proposal;
-- linked acceptance criterion (or `None`);
-- pre/post externally verified utility;
-- complexity delta annotation;
-- time/token index at first verified complete state;
-- final stop reason.
-
-## Primary endpoint
-
-**Token Efficiency (TE)**:
-
-```text
-TE = 1000 * externally_verified_task_utility / total_tokens
-```
+Do not use TE as the sole primary endpoint; at equal final utility it is an inverse-cost transformation.
 
 ## Secondary endpoints
 
-- Task success rate
-- Useful Token Ratio
-- Termination Overrun Ratio
-- Goal Drift Rate
-- Complexity Accretion Index
-- LLM Parkinsonism Index
-- Tool calls and wall time
+- Token Efficiency (TE)
+- Termination Overrun Ratio (TOR)
+- Pre-completion Goal Drift Rate (GDR_pre)
+- Gross and net complexity
+- tool calls
+- wall time
+- P50/P90/P95 token cost
+- contract-amendment frequency
+- evidence invalidation / re-verification events
+- blocked/budget/economic terminal-state frequency
+- scope-adjudication disagreement rate
 
-## Key hypothesis tests
+## Scope adjudication
 
-H1. Baseline agents consume non-zero post-completion tail tokens more often than GEC.
+The proposing model must not be the only authority for whether its action is in scope. Use deterministic dependency rules where possible; otherwise use a separate blinded model, human evaluator, or ensemble. Audit a sample of scope-link decisions with double coding.
 
-H2. GEC increases Token Efficiency while maintaining non-inferior task success.
+Allowed link classes:
 
-H3. A hard budget alone is less effective than goal/evidence/complexity-aware executive control at equal budgets.
+`DIRECT`, `PREREQUISITE`, `VERIFICATION`, `RISK_MITIGATION`, `SOFT`, `NONE`, `FORBIDDEN`.
 
-H4. The probability of unscoped actions increases as the number of unmet acceptance criteria approaches zero in baseline agents.
+## Evidence
+
+Prefer deterministic tests and observable environment assertions over LLM judges. Record verifier identity, timestamp/state version, confidence, dependencies, and invalidation events. If later changes touch dependencies, require re-verification.
+
+## Task set requirements
+
+Include tasks with:
+
+- multi-step prerequisite chains;
+- legitimately beneficial optional/soft improvements;
+- explicit non-goals;
+- changing goals that require authorized contract amendments;
+- later changes that invalidate earlier evidence;
+- blocked tasks where escalation is correct;
+- tasks with multiple plausible candidate actions of different costs.
 
 ## Statistical analysis
 
-- Report means, medians, 95% bootstrap confidence intervals, and heavy-tail percentiles (P90/P95) for token cost.
-- Compare success with paired or stratified non-inferiority analysis where task instances are matched.
-- Compare token metrics with paired bootstrap or permutation tests.
-- Predefine a non-inferiority margin for success before observing live results.
-- Publish complete trajectories after removing secrets and private data.
+Use paired bootstrap or permutation inference for token/cost outcomes. Report exact input/output tokens and provider-billed totals; report separate reasoning tokens when exposed by the provider. Report heavy-tail percentiles because runaway trajectories may be skewed.
 
-## Safety cap
+For budget sensitivity, report success across several token ceilings and normalized AUC over log budget.
 
-All conditions must retain an independent hard maximum on token use, tool calls, and wall time. GEC is an efficiency/control mechanism, not a replacement for runtime safety limits.
+## Interpretation rule
+
+Synthetic LPB results establish mechanism behavior, not real-model prevalence or effect size. The live study must be reported separately and must not back-fill commercial-model claims into the synthetic benchmark.
