@@ -4,11 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-parkinsonism"
-version = "0.1.0"
-description = "Global Executive Control and token-efficiency benchmark for persistent LLM agent loops"
+version = "0.2.0"
+description = "Uncertainty-aware Global Executive Control and matched-candidate benchmark for persistent LLM agent loops"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{name = "Dongsheng Xiao"}]
+authors = [
+  {name = "Dongsheng Xiao"},
+  {name = "Bo Zhao"},
+  {name = "Yankai Cao"}
+]
 dependencies = []
 
 [project.optional-dependencies]
