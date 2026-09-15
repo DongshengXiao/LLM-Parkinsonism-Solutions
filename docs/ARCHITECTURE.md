@@ -1,110 +1,83 @@
-# Global Executive Control (GEC) Architecture
+# Global Executive Control v0.2 Architecture
 
-## 1. Design principle
+## 1. Goal Contract
 
-The proposal-generating model should not simultaneously own the authority to redefine the goal, certify its own success, and decide indefinitely whether to continue. GEC separates **generation** from **executive control**.
+The governed objective is
 
-```text
-Frozen Goal Contract
-        |
-        v
-Planner / LLM proposal generator
-        |
-        v
-+-------------------------------+
-| Global Executive Controller   |
-|                               |
-| 1. Scope / requirement gate   |
-| 2. Evidence ledger            |
-| 3. Marginal-value gate        |
-| 4. Complexity tax             |
-| 5. Token-budget gate          |
-| 6. No-progress breaker        |
-| 7. Terminal-state classifier  |
-+-------------------------------+
-        |
-  APPROVE / REJECT / REPLAN / STOP
-        |
-        v
-Executor -> External Verifier -> Evidence Ledger
-        ^                         |
-        +-------------------------+
-```
+`G = (g, R_H, R_S, N, C, M)`
 
-## 2. Frozen Goal Contract
+where `R_H` are hard requirements, `R_S` are authorized soft objectives, `N` are explicit non-goals, `C` are constraints, and `M` is the contract-amendment policy.
 
-A Goal Contract contains:
+The executor may propose a contract change, but it cannot authorize one. `ContractAmendment` requires an external authorizer and creates a new contract revision.
 
-- a primary goal;
-- finite acceptance criteria;
-- criterion weights;
-- explicit non-goals.
+## 2. Candidate set, not single-proposal destiny
 
-The executor may generate suggestions but cannot silently mutate the contract. Formally:
+The planner emits a candidate set. GEC evaluates candidates separately and selects the highest-net-value approved action. A low-value candidate is rejected; it is not evidence that all possible continuation is low value.
 
-```text
-LLM proposal != project requirement
-```
+## 3. Independent scope authority
 
-A change to the Goal Contract is an external governance event, not an ordinary agent action.
+The planner may provide `declared_links`, but the controller consumes a separate `ScopeAssessment`:
 
-## 3. Requirement linkage
+- `DIRECT`
+- `PREREQUISITE`
+- `VERIFICATION`
+- `RISK_MITIGATION`
+- `SOFT`
+- `NONE`
+- `FORBIDDEN`
 
-Every candidate action must answer:
+This closes the circular loophole in which a generator could label its own optional proposal as “required.”
 
-```text
-Which currently unmet original acceptance criterion does this action close?
-```
+## 4. Contract-aligned expected utility
 
-If the answer is `None`, the action is optional. Under the default controller, optional actions are rejected during the completion-critical loop.
+For a direct hard-goal action targeting criterion `r_i`:
 
-## 4. External verification
+`E[ΔU_H] = p_success(a) * w_i / Σ_j w_j`
 
-Success is represented by criterion-linked evidence, not by the executor's self-report. In production, evidence can be produced by deterministic tests, health endpoints, database assertions, checksums, UI state, or independent verifier agents.
+Prerequisite and risk-mitigation links receive discounted enabling value. Soft utility is separately weighted and cannot silently become hard utility.
 
-## 5. Marginal-value gate
+The action score is:
 
-For action `a` at state `s`:
+`V(a|s) = E[ΔU] - λ_T C_T - λ_K C_K - λ_R C_R - λ_V C_V`
 
-```text
-NetValue(a|s) = ExpectedUtility(a|s)
-                - TokenPenalty(a)
-                - ComplexityTax(a)
-                - RiskPenalty(a)
-```
+If `V(a|s) <= τ`, the action is rejected. `STOP_ECONOMIC` is decided only at state level after hard completion and candidate-set evaluation.
 
-Only actions with positive expected net value and valid scope linkage are approved.
+## 5. Evidence-carrying completion
 
-## 6. Complexity tax and delete-first policy
+`Evidence` records criterion ID, pass/fail status, source, state version, confidence, dependencies, and validity. A criterion is complete only when usable evidence exists. Later actions can invalidate evidence.
 
-Positive complexity deltas are penalized. The intended production policy is:
+This prevents stale “passed once” evidence from acting as a permanent completion certificate after the system changes.
 
-```text
-DELETE? -> SIMPLIFY? -> FIX -> ADD
-```
+## 6. Process progress
 
-rather than the common agentic pattern:
+The circuit breaker tracks more than hard-criterion closure. Progress includes:
 
-```text
-FIX -> ADD ABSTRACTION -> ADD TEST -> REPAIR ABSTRACTION -> ADD MONITOR
-```
+- hard-goal utility increase;
+- validated prerequisite completion;
+- newly valid verification evidence;
+- independently grounded risk/process progress.
 
-## 7. Three stop modes
+The current LPB v0.2 ablation does not show an independent benefit for the no-progress breaker because replanning cannot alter the matched exogenous candidate stream. This is intentionally documented rather than hidden.
 
-GEC distinguishes:
+## 7. Terminal states
 
-- `STOP_SUCCESS` / **DONE**: all frozen criteria are externally verified.
-- `STOP_ECONOMIC` / **GOOD_ENOUGH**: marginal expected utility is below marginal cost.
-- `STOP_BLOCKED` / **BLOCKED**: required work cannot be completed within the declared constraints.
+- `STOP_SUCCESS`: all hard requirements carry valid evidence (and all soft objectives if the caller requests full completion).
+- `STOP_ECONOMIC`: hard requirements are complete and no governed continuation candidate has positive net value.
+- `STOP_BLOCKED`: hard requirements remain incomplete and no feasible governed path exists.
+- `STOP_BUDGET`: budget exhausted before governed completion.
 
-This avoids conflating “not worth continuing” with “success.”
+## 8. Complexity accounting
 
-## 8. No-progress circuit breaker
+GEC reports both cumulative positive complexity (`K_gross+`) and residual net complexity (`K_net`). Gross accounting prevents add-then-delete thrashing from disappearing behind a net-zero final state.
 
-After `k` consecutive cycles with no increase in externally verified goal utility, local repair is suspended. The controller requires global replanning rather than another nearly identical retry.
+The deletion-first preference (`DELETE -> SIMPLIFY -> FIX -> ADD`) remains a design principle; LPB v0.2 does not yet contain a dedicated complexity-reversal benchmark.
 
-Default in the prototype: `k = 3`.
+## 9. LPB v0.2 causal-comparison design
 
-## 9. Why a deterministic controller?
+Each episode pre-generates matched candidate sets and random execution draws. All policies see the same opportunity stream. No policy may call `force_required` or otherwise change the future proposal distribution.
 
-The prototype deliberately makes the executive gate deterministic. An LLM-based controller can reproduce the same biases as the executor and also consumes additional tokens. Deterministic scope, budget, and evidence checks make stopping auditable. LLM judgment can still be used upstream to estimate expected utility or downstream for ambiguous verification, but it is not the only authority at the terminal boundary.
+- Baseline selects the first candidate.
+- Budget-only preserves proposal order but skips candidates that cannot fit the remaining hard budget.
+- GEC independently adjudicates each candidate and selects the approved candidate with highest net value.
+
+This design isolates governance more cleanly than LPB v0.1.
