@@ -1,0 +1,33 @@
+{
+  "name": "LLM Parkinsonism Benchmark",
+  "version": "0.2",
+  "root_seed": 20260911,
+  "main": {
+    "scenarios": 6,
+    "policies": ["baseline", "budget_only", "gec"],
+    "episodes_per_scenario_policy": 1000,
+    "token_budget": 40000,
+    "max_cycles": 40,
+    "candidate_batch_size": 3,
+    "planning_tokens_per_cycle": 120
+  },
+  "proposal_stream": {
+    "optional_probability": 0.28,
+    "required_success_probability": 0.90,
+    "baseline_post_completion_stop_probability": 0.12,
+    "low_value_in_scope_branch": 0.10,
+    "optional_evidence_invalidation_rate": 0.05,
+    "matched_exogenous_candidate_sets": true,
+    "common_random_numbers_across_policies": true,
+    "force_required_after_rejection": false
+  },
+  "scope_links": ["direct", "prerequisite", "verification", "risk_mitigation", "soft", "none", "forbidden"],
+  "primary_endpoints": ["hard_goal_success", "tokens_to_first_completion"],
+  "secondary_endpoints": ["token_efficiency", "termination_overrun_ratio", "precompletion_goal_drift_rate", "gross_complexity_accretion_index", "net_complexity_index", "executive_persistence_index"],
+  "experiments": {
+    "budget_sensitivity": {"episodes": 14400, "budgets": [3000, 4000, 5000, 6000, 8000, 12000, 20000, 40000]},
+    "component_ablation": {"episodes": 7200, "policies": ["gec", "gec_no_scope", "gec_no_value", "gec_no_progress"]},
+    "noise_robustness": {"episodes": 3600, "noise_levels": [0.0, 0.02, 0.05, 0.10]},
+    "beneficial_soft_probe": true
+  }
+}
