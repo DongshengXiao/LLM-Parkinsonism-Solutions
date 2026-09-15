@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from .models import (
-    ActionKind,
     ActionProposal,
     Decision,
     DecisionType,
     GoalContract,
+    LinkType,
+    ScopeAssessment,
     TaskState,
 )
 
@@ -20,17 +22,26 @@ class ControllerConfig:
     token_penalty_per_1k: float = 0.015
     complexity_tax: float = 0.08
     risk_tax: float = 0.05
+    verification_tax: float = 0.01
     min_net_value: float = 0.0
     no_progress_limit: int = 3
-    allow_optional_actions: bool = False
+    scope_confidence_threshold: float = 0.80
+    evidence_confidence_threshold: float = 0.95
+    prerequisite_discount: float = 0.55
+    risk_mitigation_discount: float = 0.35
+    soft_utility_beta: float = 0.25
+    enable_scope_gate: bool = True
+    enable_value_gate: bool = True
+    enable_progress_breaker: bool = True
 
 
 class GlobalExecutiveController:
-    """A deterministic global gate layered above a proposal-generating LLM.
+    """Auditable governance layer above a proposal-generating model.
 
-    The controller intentionally does *not* generate work. It enforces a frozen
-    GoalContract, external verification, a marginal-value test, a complexity tax,
-    a token budget, and three terminal states: success, economic stop, blocked.
+    Key design rule: rejecting one poor candidate never implies that the project as
+    a whole should stop. Economic stopping is a *state-level* decision after hard
+    requirements are complete and no candidate in an independently assessed set
+    has positive continuation value.
     """
 
     def __init__(self, contract: GoalContract, config: ControllerConfig | None = None):
@@ -38,78 +49,157 @@ class GlobalExecutiveController:
         self.config = config or ControllerConfig()
 
     def preflight(self, state: TaskState) -> Decision:
-        """Decide whether the loop is even allowed to request another action."""
+        if state.tokens >= self.config.token_budget:
+            return Decision(
+                DecisionType.STOP_BUDGET,
+                "Token budget exhausted.",
+            )
+
+        if state.all_complete(self.contract) and not self.contract.soft_criteria:
+            return Decision(
+                DecisionType.STOP_SUCCESS,
+                "All hard acceptance criteria carry valid external evidence.",
+            )
+
+        if (
+            self.config.enable_progress_breaker
+            and state.no_progress_streak >= self.config.no_progress_limit
+        ):
+            return Decision(
+                DecisionType.REPLAN,
+                "No criterion, prerequisite, or externally grounded process progress "
+                "for the configured number of cycles; global replanning is required.",
+            )
 
         if state.all_complete(self.contract):
             return Decision(
-                DecisionType.STOP_SUCCESS,
-                "All frozen acceptance criteria have externally verified evidence.",
+                DecisionType.CONTINUE,
+                "Hard requirements are complete; only governed soft-objective work may continue.",
             )
 
-        if state.tokens >= self.config.token_budget:
-            return Decision(
-                DecisionType.STOP_BLOCKED,
-                "Token budget exhausted before all acceptance criteria were verified.",
-            )
+        return Decision(DecisionType.CONTINUE, "Hard requirements remain unmet.")
 
-        if state.no_progress_streak >= self.config.no_progress_limit:
-            return Decision(
-                DecisionType.REPLAN,
-                "No measurable goal progress for the configured number of cycles; "
-                "local repair is suspended and global replanning is required.",
-            )
+    def _eligible_links(self, state: TaskState, assessment: ScopeAssessment):
+        links = []
+        for link in assessment.links:
+            if link.confidence < self.config.scope_confidence_threshold:
+                continue
+            if link.link_type in {LinkType.NONE, LinkType.FORBIDDEN}:
+                continue
+            if link.target_id is None:
+                continue
+            if link.target_id not in self.contract.criterion_ids():
+                continue
+            if link.link_type in {LinkType.DIRECT, LinkType.VERIFICATION} and state.is_verified(link.target_id):
+                continue
+            links.append(link)
+        return links
 
-        return Decision(DecisionType.CONTINUE, "Further work may be justified.")
+    def expected_utility(self, state: TaskState, proposal: ActionProposal, assessment: ScopeAssessment) -> float:
+        """Contract-aligned expected verified utility, not generator self-scoring."""
 
-    def evaluate_action(self, state: TaskState, proposal: ActionProposal) -> Decision:
-        """Gate one candidate action against scope, marginal value, and complexity."""
+        value = 0.0
+        for link in self._eligible_links(state, assessment):
+            criterion = self.contract.get_criterion(link.target_id)  # type: ignore[arg-type]
+            if link.target_id in self.contract.hard_ids():
+                base = criterion.weight / self.contract.total_weight
+            else:
+                base = self.config.soft_utility_beta * criterion.weight / self.contract.total_soft_weight
 
+            if link.link_type in {LinkType.DIRECT, LinkType.VERIFICATION, LinkType.SOFT}:
+                multiplier = 1.0
+            elif link.link_type == LinkType.PREREQUISITE:
+                multiplier = self.config.prerequisite_discount
+            elif link.link_type == LinkType.RISK_MITIGATION:
+                multiplier = self.config.risk_mitigation_discount
+            else:
+                multiplier = 0.0
+
+            value = max(value, proposal.success_probability * base * multiplier * link.confidence)
+        return value
+
+    def evaluate_action(
+        self,
+        state: TaskState,
+        proposal: ActionProposal,
+        assessment: ScopeAssessment,
+    ) -> Decision:
         remaining_budget = self.config.token_budget - state.tokens
         if proposal.token_cost > remaining_budget:
             return Decision(
-                DecisionType.STOP_BLOCKED,
-                "The candidate action cannot fit within the remaining token budget.",
-            )
-
-        if proposal.target_criterion and state.is_verified(proposal.target_criterion):
-            return Decision(
                 DecisionType.REJECT,
-                f"Criterion {proposal.target_criterion} is already verified; repeated work is unnecessary.",
+                "Candidate cannot fit within the remaining token budget; reject and replan.",
             )
 
-        if proposal.target_criterion is None:
-            if proposal.kind == ActionKind.DELETE and proposal.complexity_delta < 0:
-                pass
-            elif not self.config.allow_optional_actions:
+        if self.config.enable_scope_gate:
+            if assessment.non_goal_match or any(
+                link.link_type == LinkType.FORBIDDEN
+                and link.confidence >= self.config.scope_confidence_threshold
+                for link in assessment.links
+            ):
                 return Decision(
                     DecisionType.REJECT,
-                    "Action is not linked to any unmet frozen acceptance criterion; "
-                    "it remains optional and cannot become a hard gate.",
+                    "Independent scope assessment matches an explicit non-goal.",
                 )
 
-        if (
-            proposal.target_criterion is not None
-            and proposal.target_criterion not in self.contract.criterion_ids()
-        ):
-            return Decision(
-                DecisionType.REJECT,
-                "Action targets a self-invented requirement outside the GoalContract.",
-            )
+            eligible = self._eligible_links(state, assessment)
+            if not eligible:
+                return Decision(
+                    DecisionType.REJECT,
+                    "No sufficiently confident direct, prerequisite, verification, risk-mitigation, "
+                    "or soft-objective link to the governed Goal Contract.",
+                )
 
+        expected_utility = self.expected_utility(state, proposal, assessment)
         token_penalty = self.config.token_penalty_per_1k * (proposal.token_cost / 1000.0)
         complexity_penalty = self.config.complexity_tax * max(proposal.complexity_delta, 0.0)
         risk_penalty = self.config.risk_tax * max(proposal.risk, 0.0)
-        net_value = proposal.expected_utility - token_penalty - complexity_penalty - risk_penalty
+        verification_penalty = self.config.verification_tax if proposal.kind.value == "verify" else 0.0
+        net_value = expected_utility - token_penalty - complexity_penalty - risk_penalty - verification_penalty
 
-        if net_value <= self.config.min_net_value:
+        if self.config.enable_value_gate and net_value <= self.config.min_net_value:
             return Decision(
-                DecisionType.STOP_ECONOMIC,
-                "Expected marginal utility does not exceed token, complexity, and risk costs.",
+                DecisionType.REJECT,
+                "This candidate has non-positive expected net value; reject it without declaring the project finished.",
                 net_value=net_value,
+                expected_utility=expected_utility,
             )
 
         return Decision(
             DecisionType.APPROVE,
-            "Action is in-scope and has positive expected net value.",
+            "Candidate is governed in-scope and has acceptable expected net value.",
             net_value=net_value,
+            expected_utility=expected_utility,
         )
+
+    def classify_after_candidate_set(
+        self,
+        state: TaskState,
+        decisions: Iterable[Decision],
+        *,
+        feasible_hard_path_exists: bool = True,
+    ) -> Decision:
+        """State-level terminal classifier after a candidate set / replan pass."""
+
+        decisions = tuple(decisions)
+        if state.all_complete(self.contract):
+            if state.all_soft_complete(self.contract):
+                return Decision(DecisionType.STOP_SUCCESS, "Hard and soft governed objectives are complete.")
+            positive = any(d.decision == DecisionType.APPROVE and (d.net_value or 0.0) > self.config.min_net_value for d in decisions)
+            if not positive:
+                return Decision(
+                    DecisionType.STOP_ECONOMIC,
+                    "Hard requirements are complete and no candidate in the governed continuation set has positive net value.",
+                )
+            return Decision(DecisionType.CONTINUE, "At least one governed soft-objective action remains worthwhile.")
+
+        if not feasible_hard_path_exists:
+            return Decision(
+                DecisionType.STOP_BLOCKED,
+                "Hard requirements remain unmet and no feasible governed path to completion is available.",
+            )
+
+        if state.tokens >= self.config.token_budget:
+            return Decision(DecisionType.STOP_BUDGET, "Budget exhausted before hard completion.")
+
+        return Decision(DecisionType.CONTINUE, "A feasible path to hard completion remains.")
