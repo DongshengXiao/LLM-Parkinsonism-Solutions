@@ -1,107 +1,108 @@
-# LLM Parkinsonism Solutions
+# LLM Parkinsonism Solutions — GEC v0.2
 
-Research prototype accompanying the manuscript **"LLM Parkinsonism: Executive-Control Failure, Token-Inefficient Persistence, and a Global Executive Control Architecture for Autonomous Language-Model Agents."**
+Research code accompanying **“LLM Parkinsonism: Executive-Control Failure, Token-Inefficient Persistence, and an Uncertainty-Aware Global Executive Control Architecture for Autonomous Language-Model Agents.”**
 
-> **Important terminology note:** “LLM Parkinsonism” is a computational-behavior metaphor, not a medical diagnosis and not a claim of mechanistic equivalence between Parkinson disease and language models. The analogy is limited to a surface pattern: large early task steps followed by progressively smaller actions, continued activity after diminishing utility, and unreliable project-level stopping.
+> “LLM Parkinsonism” is a deliberately limited computational-behavior metaphor, not a diagnosis and not a claim of mechanistic homology with Parkinson disease.
 
-## Core idea
+## What changed in v0.2
 
-Modern LLM agents are excellent at proposing the *next* locally plausible action, but local next-action competence does not imply global executive control. Four measurable failure modes are studied here:
+GEC v0.2 addresses the principal validity problems identified in the first prototype:
 
-1. **Goal drift** — actions are no longer traceable to the original acceptance criteria.
-2. **Complexity accretion** — optional abstractions create new dependencies and repair work.
-3. **Termination failure** — the agent keeps acting after the original goal is already verified.
-4. **Token-inefficient persistence** — a large fraction of tokens produces no verified increase in task utility.
+- **Candidate-level low value no longer stops the project.** A low-value action is rejected; `STOP_ECONOMIC` is a state-level decision after hard requirements are complete and no candidate in the governed continuation set has positive value.
+- **Hard requirements and soft objectives are separated.** `STOP_BLOCKED` / `STOP_BUDGET` cannot be mislabeled as success.
+- **Scope linkage is causal, not only criterion-closing.** `DIRECT`, `PREREQUISITE`, `VERIFICATION`, `RISK_MITIGATION`, and `SOFT` links are supported.
+- **The generator does not own scope authority.** The controller consumes an independent `ScopeAssessment`; generator self-declared links are non-authoritative.
+- **Evidence is typed, confidence-bearing, state-versioned, and invalidatable.** Completion depends on valid external evidence rather than a Boolean flag.
+- **Expected utility is contract-aligned.** Direct hard-goal value is derived from criterion weight and action success probability.
+- **Goal Contract changes are governed events.** Anonymous/self-authorized amendments are rejected.
+- **Progress includes validated prerequisites and new valid evidence**, not only binary criterion closure.
+- **Pre-completion drift is separated from post-completion overrun.** Gross complexity is separated from residual net complexity.
+- **LPB v0.2 uses matched exogenous candidate sets/common random numbers.** Policies face the same action opportunities; GEC can no longer improve merely by forcing the proposal generator to emit required work.
 
-The repository introduces a **Global Executive Controller (GEC)** that sits above an arbitrary planner/executor and enforces:
+## Core decision rules
 
-- an immutable **Goal Contract**;
-- requirement-to-action linkage;
-- externally grounded verification;
-- a **complexity tax**;
-- a marginal-value / token-cost gate;
-- a no-progress circuit breaker;
-- explicit `DONE`, `GOOD_ENOUGH`, and `BLOCKED` terminal semantics.
+```text
+low value of one candidate -> REJECT(candidate), not STOP_PROJECT
 
-## Main benchmark result
+STOP_SUCCESS:
+    all hard requirements have valid evidence
 
-Controlled synthetic benchmark, 6 task families, 2,000 episodes per scenario per policy (36,000 main episodes total). The proposal generator is held fixed; only governance differs.
+STOP_ECONOMIC:
+    hard requirements complete
+    AND no governed continuation candidate has positive net value
 
-| Policy | Success | Mean tokens | Useful-token ratio | Token efficiency (verified utility / 1k tokens) | Termination overrun | Goal drift | LLM Parkinsonism Index |
+STOP_BLOCKED:
+    hard requirements incomplete
+    AND no feasible governed path remains
+```
+
+## LPB v0.2 main benchmark
+
+Six task families, three policies, 1,000 episodes per scenario-policy cell: **18,000 episodes**. All policies use the same 40,000-token hard ceiling and matched candidate sets.
+
+| Policy | Hard-goal success | Mean total tokens | Tokens to first completion* | TE | TOR | Pre-completion GDR | Gross CAI |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Baseline local loop | 100% | 13,039.96 | 37.61% | 0.1063 | 43.26% | 62.28% | 57.73 |
-| Budget only | 100% | 13,013.36 | 37.21% | 0.1051 | 43.55% | 62.74% | 58.16 |
-| **GEC** | **100%** | **4,120.64** | **89.60%** | **0.2552** | **0%** | **0%** | **4.48** |
+| Baseline local loop | 67.42% | 32,058 | 23,719 | 0.0317 | 0.1249 | 0.2721 | 1.6543 |
+| Budget-only | 67.85% | 32,170 | 23,819 | 0.0317 | 0.1256 | 0.2718 | 1.6604 |
+| **GEC v0.2** | **96.57%** | **12,574** | **12,158** | **0.0963** | **0.0000** | **0.0000** | **0.1228** |
 
-Relative to the baseline, GEC reduces mean token consumption by **68.4%**, raises token efficiency by **2.40×**, and reduces the operational LLM Parkinsonism Index by **92.2%** in this controlled environment.
+\*Conditional on trajectories that reached first completion.
 
-These numbers are **simulation results**, not measurements of a specific commercial LLM. The repository includes a prespecified live-model validation protocol for subsequent frontier-model experiments.
+Relative to baseline, GEC v0.2 improved success by **29.15 percentage points**, reduced mean total token use by **60.8%**, and reduced tokens to first completion by **48.7%** among completed trajectories. TE was 3.04× higher, but TE is treated as secondary because at equal final utility it is an inverse-cost transformation.
+
+These are **synthetic mechanism-isolation results**, not estimates for any commercial model.
+
+## Additional experiments
+
+- **Budget sensitivity:** 14,400 episodes; normalized success-vs-log-budget AUC = **0.467 GEC vs 0.167 budget-only**.
+- **Component ablation:** 7,200 episodes. Trusting generator scope self-report reintroduced pre-completion drift (GDR=0.0716) and increased gross complexity (CAI 0.3144 vs 0.1243). Removing the value gate increased mean tokens from 12,733 to 14,500.
+- **No-progress breaker:** removing it slightly improved efficiency in LPB v0.2 because the exogenous proposal stream cannot be altered by replanning. The repository therefore does **not** claim synthetic evidence for this component’s independent benefit.
+- **Noise robustness:** 3,600 episodes with synthetic scope/verifier noise up to 0.10; success remained about 96%.
+- **Beneficial-soft-work probe:** a positive-value soft action is approved while an expensive low-yield soft action is rejected; one bad candidate does not cause project-level economic stopping.
 
 ## Quick start
 
 ```bash
 python -m pip install -e .
 pytest -q
-llm-parkinsonism benchmark --output experiments/results --episodes 2000
+llm-parkinsonism benchmark --output experiments/results --episodes 1000
 ```
 
-Reproduce the paper experiments:
+Full reproduction:
 
 ```bash
 PYTHONPATH=src python experiments/run_benchmark.py
-PYTHONPATH=src python experiments/run_sensitivity.py
+PYTHONPATH=src python experiments/run_budget_sensitivity.py
+PYTHONPATH=src python experiments/run_ablation.py
+PYTHONPATH=src python experiments/run_noise_robustness.py
 ```
 
 ## Repository structure
 
 ```text
-src/llm_parkinsonism/      Core GEC, state model, metrics, benchmark simulator
-benchmarks/                Frozen LPB v0.1 task definitions
-experiments/               Reproduction scripts and generated results
-paper/                     Manuscript and references
-docs/                      Architecture and live-evaluation protocol
+src/llm_parkinsonism/      GEC v0.2 controller, state/evidence model, metrics, LPB simulator
+benchmarks/                LPB v0.1 (historical) and LPB v0.2 definitions
+experiments/               Reproduction scripts and machine-readable results
+paper/                     Revised manuscript and references
+docs/                      Architecture and live-model validation protocol
 tests/                     Unit tests
 ```
 
-## New metrics
+## Primary metrics
 
-Let `U_verified` be normalized task utility certified by external evidence and `T` be consumed tokens.
-
-- **Token Efficiency (TE)** = `1000 * U_verified / T`
-- **Useful Token Ratio (UTR)** = tokens attributable to actions that close a frozen acceptance criterion / total tokens
-- **Termination Overrun Ratio (TOR)** = tokens consumed after the first verified-complete state / total tokens
-- **Goal Drift Rate (GDR)** = executed actions with no link to an unmet frozen criterion / all executed actions
-- **Complexity Accretion Index (CAI)** = optional positive complexity added / required baseline complexity
-- **LLM Parkinsonism Index (LPI)** = bounded composite of nonproductive persistence, termination overrun, goal drift, and complexity accretion
-
-The paper treats LPI as an **operational benchmark score**, not a clinical measure. Token Efficiency is the primary economic metric.
-
-## Watchdog motivating example
-
-Frozen goal:
-
-```text
-A DOWN -> A NODE DOWN ALERT
-B DOWN -> B NODE DOWN ALERT
-A+B DOWN -> both node-level alerts remain observable
-Recovery -> healthy state restored
-```
-
-Non-goals:
-
-```text
-SITE DOWN correlation
-suppression of individual node alerts
-cross-node inference
-```
-
-A proposal such as “add SITE DOWN correlation and suppress individual alerts” is rejected because it closes no unmet criterion and adds state/dependency complexity. The executor may *suggest* it, but cannot promote it into a hard requirement.
+- **Hard-goal success** — externally evaluated completion of all hard criteria.
+- **Tokens to first completion** — cost at the first externally complete hard-goal state.
+- **Token Efficiency (TE)** = `1000 * externally evaluated hard utility / total tokens` (secondary economic summary).
+- **Termination Overrun Ratio (TOR)** — post-completion token tail.
+- **Pre-completion Goal Drift Rate (GDR_pre)** — unscoped executed actions before first completion / all pre-completion executed actions.
+- **Gross Complexity Accretion Index** — cumulative positive complexity / required baseline complexity.
+- **Net Complexity Index** — residual positive net complexity / required baseline complexity.
+- **Executive Persistence Index (EPI)** — exploratory descriptive composite; not a clinical measure and not a primary endpoint.
 
 ## Status
 
-- Core architecture implemented.
-- 9 unit tests passing.
-- Main 36,000-episode controlled synthetic benchmark completed.
-- 48,000-episode budget sensitivity study completed.
-- Paper draft included.
-- Live frontier-model evaluation is intentionally separated from the synthetic results and is not claimed as completed.
+- GEC v0.2 architecture implemented.
+- 13 unit tests passing locally for the research revision.
+- LPB v0.2 main, budget, ablation, and noise experiments completed.
+- Revised manuscript included.
+- Live frontier-model validation remains future work and is not claimed as completed.
