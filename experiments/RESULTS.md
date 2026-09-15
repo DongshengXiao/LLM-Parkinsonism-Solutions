@@ -1,49 +1,49 @@
-# Experimental Results
+# LPB v0.2 Synthetic Results
 
-## Main controlled synthetic benchmark
+All results below are mechanistic simulations under fixed synthetic scenarios and parameters. They are not measurements of a named commercial LLM.
 
-Configuration: 6 scenarios x 3 policies x 2,000 episodes = **36,000 episodes**. Same stochastic proposal generator in all conditions. Seed root: `20260911`.
+## Main matched-candidate benchmark — 18,000 episodes
 
-| Metric | Baseline | Budget only | GEC |
-|---|---:|---:|---:|
-| Success | 1.000 | 1.000 | 1.000 |
-| Mean total tokens | 13,039.96 | 13,013.36 | **4,120.64** |
-| Useful Token Ratio | 0.3761 | 0.3721 | **0.8960** |
-| Token Efficiency (verified utility/1k tokens) | 0.1063 | 0.1051 | **0.2552** |
-| Nonproductive Persistence Ratio | 0.6239 | 0.6279 | **0.1040** |
-| Termination Overrun Ratio | 0.4326 | 0.4355 | **0.0000** |
-| Goal Drift Rate | 0.6228 | 0.6274 | **0.0000** |
-| Complexity Accretion Index | 0.9792 | 0.9802 | **0.0556** |
-| LLM Parkinsonism Index | 57.73 | 58.16 | **4.48** |
-| Executed actions | 12.95 | 12.94 | **3.52** |
+| Policy | Success | Mean tokens | Tokens to first completion* | TE | TOR | GDR_pre | Gross CAI |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline | 0.6742 | 32,058 | 23,719 | 0.0317 | 0.1249 | 0.2721 | 1.6543 |
+| Budget-only | 0.6785 | 32,170 | 23,819 | 0.0317 | 0.1256 | 0.2718 | 1.6604 |
+| GEC v0.2 | **0.9657** | **12,574** | **12,158** | **0.0963** | **0** | **0** | **0.1228** |
 
-Relative to baseline, GEC:
+\*Conditional on completion.
 
-- reduced mean total tokens by **68.4%**;
-- increased Token Efficiency by **2.40x**;
-- reduced executed actions by **72.8%**;
-- reduced LPI by **92.2%**;
-- eliminated post-completion token overrun in the benchmark by design because verified completion is a terminal preflight state.
+GEC vs baseline: +29.15 percentage points success, -60.8% total tokens, -48.7% tokens to first completion, 3.04× TE.
 
-The budget-only condition is intentionally informative: with a generous 40k-token ceiling, it behaves almost identically to the local-loop baseline. A ceiling limits worst-case exposure but does not itself solve goal drift, complexity accretion, or completion recognition.
+Zero TOR and zero pre-completion GDR under default GEC are partly enforcement properties; the more informative outcomes are success and cost under matched candidate opportunities.
 
-## Budget sensitivity
+## Budget sensitivity — 14,400 episodes
 
-Each row: 6 scenarios x 500 episodes = 3,000 episodes per policy/budget.
+Normalized success-vs-log-budget AUC:
 
-| Budget | Budget-only success | GEC success | Budget-only TE | GEC TE |
-|---:|---:|---:|---:|---:|
-| 3,000 | 4.33% | **8.27%** | 0.1707 | **0.2375** |
-| 4,000 | 21.93% | **50.47%** | 0.1654 | **0.2457** |
-| 5,000 | 42.27% | **84.00%** | 0.1623 | **0.2525** |
-| 6,000 | 59.07% | **95.10%** | 0.1530 | **0.2544** |
-| 8,000 | 81.57% | **99.70%** | 0.1376 | **0.2556** |
-| 12,000 | 97.57% | **100%** | 0.1173 | **0.2551** |
-| 20,000 | 100% | **100%** | 0.1078 | **0.2545** |
-| 40,000 | 100% | **100%** | 0.1061 | **0.2557** |
+- budget-only: **0.167**
+- GEC: **0.467**
 
-Interpretation: under tight budgets, GEC spends a greater fraction of the budget on criterion-closing work and therefore reaches the verified goal more often. Under loose budgets, both can succeed, but the uncontrolled agent keeps spending on low-value tail work.
+At 40k: budget-only success 68.67%; GEC 96.33%.
 
-## Limitations
+## Ablation — 7,200 episodes
 
-These are controlled **synthetic** experiments. The benchmark is designed to isolate executive-control mechanisms and therefore should not be read as an estimate of the prevalence or magnitude of the phenomenon in any named commercial model. Live-model validation is specified separately in `docs/LIVE_EVALUATION_PROTOCOL.md`.
+| Policy | Success | Mean tokens | TE | GDR_pre | Gross CAI |
+|---|---:|---:|---:|---:|---:|
+| Full GEC | 0.9611 | 12,733 | 0.0951 | 0 | 0.1243 |
+| No independent scope authority | 0.9522 | 14,036 | 0.0874 | 0.0716 | 0.3144 |
+| No value gate | 0.9600 | 14,500 | 0.0862 | 0 | 0.1263 |
+| No progress breaker | 0.9611 | 12,318 | 0.0977 | 0 | 0.1243 |
+
+The no-progress breaker does not show a positive independent effect in LPB v0.2 because replanning cannot alter the exogenous candidate stream. This negative result is retained explicitly.
+
+## Noise robustness — 3,600 episodes
+
+GEC hard-goal success remained approximately 96% across nominal injected scope/verifier noise levels from 0 to 0.10. This is a synthetic random-noise stress test, not real-world error calibration.
+
+## Beneficial-soft probe
+
+- low-cost governed soft action: **APPROVE**, net value 0.2321
+- expensive low-yield soft action: **REJECT**, net value -0.1605
+- candidate-set terminal decision: **CONTINUE**
+
+This confirms that one bad candidate is not promoted into a project-level economic stop.
